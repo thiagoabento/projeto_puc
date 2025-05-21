@@ -14,12 +14,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import yahoofinance.YahooFinance;
-import yahoofinance.quotes.stock.StockQuote;
 
-import java.math.BigDecimal;
-import java.sql.Timestamp;
-import java.text.SimpleDateFormat;
 import java.util.Map;
 
 
