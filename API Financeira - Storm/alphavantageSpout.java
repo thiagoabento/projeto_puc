@@ -1,5 +1,6 @@
 package org.example;
 
+import com.esotericsoftware.minlog.Log;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.storm.spout.SpoutOutputCollector;
@@ -8,71 +9,80 @@ import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.base.BaseRichSpout;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Values;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-
 import java.util.Map;
-
 
 public class alphavantageSpout extends BaseRichSpout {
     private SpoutOutputCollector collector;
-    private static String api_alphavantage = "UE1LBQU74PFKDIII";
-    private static String symbol = "GOOG";
+    private static final String API_KEY = "UE1LBQU74PFKDIII";
+    private static final String SYMBOL = "GOOG";
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
-
+    @Override
     public void open(Map conf, TopologyContext context, SpoutOutputCollector collector) {
         this.collector = collector;
     }
 
+    @Override
     public void nextTuple() {
         try {
-            String url = "https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=" + symbol + "&apikey=" + api_alphavantage + "";
-            URL urlAlphaVantage = new URL(url);
-            HttpURLConnection connection = (HttpURLConnection) urlAlphaVantage.openConnection();
+            String urlStr = "https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=" + SYMBOL + "&apikey=" + API_KEY;
+            URL url = new URL(urlStr);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(10000);
 
-            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-            StringBuilder stringBuilder = new StringBuilder();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            StringBuilder jsonBuilder = new StringBuilder();
             String line;
 
-            while ((line = bufferedReader.readLine()) != null) {
-                stringBuilder.append(line);
-
+            while ((line = reader.readLine()) != null) {
+                jsonBuilder.append(line);
             }
 
-            bufferedReader.close();
+            reader.close();
             connection.disconnect();
 
-            String response = stringBuilder.toString();
-            JsonNode root = new ObjectMapper().readTree(response);
-            JsonNode quoteAlpha = root.get("Global Quote");
+            String response = jsonBuilder.toString();
+            JsonNode root = MAPPER.readTree(response);
 
-            if (quoteAlpha != null) {
-                // Extrair o preço da cotação e emiti-lo junto com o símbolo
-                double price = Double.parseDouble(quoteAlpha.get("05. price").asText()); // Preço da ação
-                double previousClose = Double.parseDouble(quoteAlpha.get("08. previous close").asText()); // Preço da ação dia anterior
-
-                collector.emit(new Values(symbol, price,previousClose));  // Pegando simbolo, preço atual e preço dia anterior
+            // Analisa se a API bloqueou a consulta aos dados
+            if (root.has("Note")) {
+                Log.warn("Aviso da API: " + root.get("Note").asText());
+                Thread.sleep(60000); // Aguarda 1 minuto
+                return;
             }
 
+            JsonNode quote = root.get("Global Quote");
+            if (quote == null || quote.isEmpty()) {
+                Log.warn(" Nenhum dado encontrado para a cotação.");
+                Thread.sleep(30000); // Aguarda para consultar novamente
+                return;
+            }
 
-        } catch (Exception a) {
-            System.out.println("Erro ao buscar cotação: " + a.getMessage());
+            double price = Double.parseDouble(quote.get("05. price").asText());
+            double previousClose = Double.parseDouble(quote.get("08. previous close").asText());
+
+            collector.emit(new Values(SYMBOL, price, previousClose));
+            Log.info("📊 Cotação emitida: " + SYMBOL + " | Atual: " + price + " | Anterior: " + previousClose);
+
+        } catch (Exception e) {
+            Log.warn("❗ Erro ao buscar cotação: " + e.getMessage());
         }
+
+        // Tempo de espera entre consultas
         try {
-            Thread.sleep(60000);
-        } catch (InterruptedException ignored) {
-        }
-
+            Thread.sleep(60000); // 1 minuto entre chamadas
+        } catch (InterruptedException ignored) {}
     }
 
-
-    public void declareOutputFields(OutputFieldsDeclarer declarer){
-            declarer.declare(new Fields("symbol","price","previousClose"));
+    @Override
+    public void declareOutputFields(OutputFieldsDeclarer declarer) {
+        declarer.declare(new Fields("symbol", "price", "previousClose"));
     }
-
 }

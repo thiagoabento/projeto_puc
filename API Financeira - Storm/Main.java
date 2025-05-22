@@ -1,5 +1,6 @@
 package org.example;
 
+import com.esotericsoftware.minlog.Log;
 import org.apache.storm.Config;
 import org.apache.storm.LocalCluster;
 import org.apache.storm.thrift.TException;
@@ -18,19 +19,19 @@ public class Main{
 
         LocalCluster cluster = null;
         try {
-            cluster = new LocalCluster();
+            cluster =  new LocalCluster();
             cluster.submitTopology("TopologiaAlphaVantage", config,builder.createTopology());
+            System.out.println("A topologia foi iniciada.");
             Thread.sleep(50000);
+
+        } catch (InterruptedException e) {
+
+            System.err.println("Ocoreru erro:  " + e.getMessage());
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
+
             throw new RuntimeException(e);
-        }
-
-        try {
-
-    }finally {
-            if (cluster != null) {
-              //  cluster.shutdown();
-            }
+        } finally {
             cluster.shutdown();
         }
     }
